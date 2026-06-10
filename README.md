@@ -8,12 +8,15 @@
 - 進捗バー・残り時間表示つき。途中で安全に中止できます
 - 目安: 一般的な動画で **元の 20% 前後のサイズ**（80%減）まで小さくなります
 
-## はじめに（受け取った zip を使う場合）
+## ダウンロード
 
-1. zip を解凍して、「動画圧縮ツール」フォルダごと好きな場所に置きます
+**[📦 最新版をダウンロード](https://github.com/yun-013/video_compressor/releases/latest)** — `video-compressor-windows.zip` をクリック
+
+1. ダウンロードした zip を解凍して、「動画圧縮ツール」フォルダごと好きな場所に置きます
 2. フォルダ内の **`動画圧縮ツール.exe`** をダブルクリックして起動します
 
 Python や FFmpeg のインストールは不要です（すべて同梱されています）。
+対応 OS: Windows 10 / 11 (64bit)
 
 > **「WindowsによってPCが保護されました」と表示されたら**
 > 個人配布の署名なしアプリのため、初回起動時に警告が出ることがあります。
@@ -145,6 +148,14 @@ powershell -ExecutionPolicy Bypass -File build_exe.ps1
   （入手先: <https://www.gyan.dev/ffmpeg/builds/> の release essentials。2回目以降は再利用されます）
 - `release/` `build/` `dist/` はビルド生成物のため git 管理外です
 
+### GitHub Releases への公開
+
+```powershell
+# release\動画圧縮ツール を zip 化してリリースに添付 (バージョンは適宜変更)
+Compress-Archive -Path "release\動画圧縮ツール" -DestinationPath "release\video-compressor-windows.zip" -Force
+gh release create v1.0.1 "release\video-compressor-windows.zip" --title "v1.0.1" --notes "変更点を記載"
+```
+
 ### ファイル構成
 
 - `gui.py` — GUI 版(tkinter)
@@ -152,3 +163,11 @@ powershell -ExecutionPolicy Bypass -File build_exe.ps1
 - `動画圧縮ツール.bat` — GUI をコンソールなしで起動するランチャー
 - `build_exe.ps1` — 配布用 exe ビルドスクリプト
 - `使い方.txt` — 配布フォルダに同梱する説明書
+
+## ライセンス
+
+本ツールのソースコードは [MIT License](LICENSE) です。
+
+配布版 zip に同梱している [FFmpeg](https://ffmpeg.org/) は GPL/LGPL のオープンソースソフトウェアです
+（ビルド入手元: [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)、ライセンス全文は同梱の `bin\FFMPEG_LICENSE.txt`、
+ソースコードは <https://ffmpeg.org/download.html> で入手できます）。
