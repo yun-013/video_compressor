@@ -8,6 +8,7 @@
     python compress.py "D:\\videos"                     # フォルダ内を一括圧縮 (GPU/HEVC)
     python compress.py video.mp4 --quality 22           # 品質を上げて圧縮
     python compress.py video.mp4 --fps 30 --height 720  # 30fps / 720p に変換
+    python compress.py video.mp4 --start 1:30 --end 5:00  # 1分30秒〜5分を切り出して圧縮
     python compress.py "D:\\videos" --hw none           # CPU (libx265) で最高圧縮率
     python compress.py video.mp4 -o "D:\\out"           # 出力先フォルダ指定
     python compress.py video.mp4 --replace-original     # 元ファイルを置き換える
@@ -99,6 +100,22 @@ def encoder_label(codec, hw):
     return f"CPU ({sw})"
 
 
+def parse_time(text):
+    """"90" / "1:30" / "0:01:30.5" のような時間表記を秒 (float) に変換する。"""
+    parts = text.strip().split(":")
+    if not 1 <= len(parts) <= 3:
+        raise ValueError(f"時間の形式が不正です: {text}")
+    try:
+        sec = 0.0
+        for p in parts:
+            sec = sec * 60 + float(p or 0)
+    except ValueError:
+        raise ValueError(f"時間の形式が不正です: {text}") from None
+    if sec < 0:
+        raise ValueError(f"時間は 0 以上で指定してください: {text}")
+    return sec
+
+
 def probe(path: Path):
     """動画の長さ・解像度・fps・コーデックを取得する。"""
     res = run([
@@ -159,7 +176,15 @@ def build_command(src: Path, dst: Path, info, opts, hw):
     if opts.fps and info["fps"] > opts.fps + 0.01:
         vf.append(f"fps={opts.fps}")
 
-    cmd = [FFMPEG, "-hide_banner", "-v", "error", "-y", "-i", str(src)]
+    start = getattr(opts, "clip_start", None)
+    end = getattr(opts, "clip_end", None)
+
+    cmd = [FFMPEG, "-hide_banner", "-v", "error", "-y"]
+    if start:
+        cmd += ["-ss", f"{start:g}"]
+    cmd += ["-i", str(src)]
+    if end is not None:
+        cmd += ["-t", f"{end - (start or 0):g}"]
     if vf:
         cmd += ["-vf", ",".join(vf)]
     cmd += build_video_args(opts.codec, hw, opts.quality, opts.preset)
@@ -201,6 +226,16 @@ def compress_file(src: Path, dst: Path, opts, hw,
     if info is None:
         log(f"  スキップ: 動画情報を取得できません: {src.name}")
         return "skipped"
+
+    # クリップ指定がある場合、進捗計算に使う長さを切り出し後の長さにする
+    clip_start = getattr(opts, "clip_start", None) or 0
+    clip_end = getattr(opts, "clip_end", None)
+    if clip_start or clip_end is not None:
+        end = min(clip_end, info["duration"]) if clip_end is not None else info["duration"]
+        if end - clip_start <= 0:
+            log(f"  スキップ: クリップ範囲が動画の長さ ({fmt_time(info['duration'])}) の外です")
+            return "skipped"
+        info = dict(info, duration=end - clip_start)
 
     cmd = build_command(src, dst, info, opts, hw)
 
@@ -316,6 +351,10 @@ def main():
                     help="品質値 CRF/QP (既定: 24。小さいほど高画質)")
     ap.add_argument("--codec", choices=list(CODECS), default="hevc",
                     help="出力コーデック (既定: hevc = H.265)")
+    ap.add_argument("--start", dest="clip_start", type=parse_time, metavar="TIME",
+                    help="クリップ開始位置 (例: 90 / 1:30 / 0:01:30.5)。指定区間のみ切り出して圧縮")
+    ap.add_argument("--end", dest="clip_end", type=parse_time, metavar="TIME",
+                    help="クリップ終了位置 (例: 300 / 5:00)。省略時は末尾まで")
     ap.add_argument("--fps", type=float, help="出力フレームレート (例: 30)。元より高い値は無視")
     ap.add_argument("--height", type=int, help="出力の縦解像度 (例: 720)。元より大きい値は無視")
     ap.add_argument("--hw", choices=["auto", "nvenc", "qsv", "amf", "none"], default="auto",
@@ -333,6 +372,9 @@ def main():
     if not check_ffmpeg():
         sys.exit("エラー: ffmpeg / ffprobe が見つかりません。インストールして PATH を通してください。")
 
+    if args.clip_start is not None and args.clip_end is not None and args.clip_end <= args.clip_start:
+        sys.exit("エラー: --end は --start より後の時間を指定してください。")
+
     try:
         hw = pick_hw(args.codec, args.hw)
     except ValueError as e:
@@ -340,7 +382,10 @@ def main():
 
     print(f"エンコーダー: {encoder_label(args.codec, hw)} / 品質: {args.quality}"
           + (f" / fps: {args.fps}" if args.fps else "")
-          + (f" / 高さ: {args.height}px" if args.height else ""))
+          + (f" / 高さ: {args.height}px" if args.height else "")
+          + (f" / クリップ: {fmt_time(args.clip_start or 0)}-"
+             + (fmt_time(args.clip_end) if args.clip_end is not None else "末尾")
+             if args.clip_start or args.clip_end is not None else ""))
 
     files = collect_inputs(args.inputs)
     if not files:
