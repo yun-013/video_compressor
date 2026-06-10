@@ -131,6 +131,17 @@ class App:
         ttk.Combobox(opt_frame, textvariable=self.audio_var, values=list(AUDIO_CHOICES),
                      state="readonly", width=22).grid(row=3, column=1, sticky="w", pady=3)
 
+        ttk.Label(opt_frame, text="切り出し:").grid(row=4, column=0, sticky="e", padx=4, pady=3)
+        clip_row = ttk.Frame(opt_frame)
+        clip_row.grid(row=4, column=1, columnspan=3, sticky="w", pady=3)
+        self.clip_start_var = tk.StringVar()
+        self.clip_end_var = tk.StringVar()
+        ttk.Label(clip_row, text="開始").pack(side="left")
+        ttk.Entry(clip_row, textvariable=self.clip_start_var, width=10).pack(side="left", padx=(2, 10))
+        ttk.Label(clip_row, text="終了").pack(side="left")
+        ttk.Entry(clip_row, textvariable=self.clip_end_var, width=10).pack(side="left", padx=(2, 10))
+        ttk.Label(clip_row, text="(例: 90 や 1:30。空欄 = 全体)").pack(side="left")
+
         # --- 出力設定 ---
         out_frame = ttk.LabelFrame(main, text="出力設定", padding=6)
         out_frame.pack(fill="x", **pad)
@@ -249,6 +260,18 @@ class App:
             messagebox.showwarning("入力エラー", "フレームレート・解像度は数値で指定してください。")
             return None
 
+        try:
+            clip_start = (core.parse_time(self.clip_start_var.get())
+                          if self.clip_start_var.get().strip() else None)
+            clip_end = (core.parse_time(self.clip_end_var.get())
+                        if self.clip_end_var.get().strip() else None)
+        except ValueError:
+            messagebox.showwarning("入力エラー", "切り出しの時間は 90 や 1:30 のような形式で指定してください。")
+            return None
+        if clip_start is not None and clip_end is not None and clip_end <= clip_start:
+            messagebox.showwarning("入力エラー", "切り出しの終了時間は開始時間より後にしてください。")
+            return None
+
         mode = self.outmode_var.get()
         outdir = None
         if mode == "dir":
@@ -265,6 +288,8 @@ class App:
             hw=HW_CHOICES[self.hw_var.get()],
             fps=fps,
             height=height,
+            clip_start=clip_start,
+            clip_end=clip_end,
             audio=AUDIO_CHOICES[self.audio_var.get()],
             audio_bitrate="160k",
             preset="medium",
@@ -324,7 +349,10 @@ class App:
 
             log(f"エンコーダー: {core.encoder_label(cfg.opts.codec, hw)} / 品質: {cfg.opts.quality}"
                 + (f" / fps: {cfg.opts.fps:g}" if cfg.opts.fps else "")
-                + (f" / 高さ: {cfg.opts.height}px" if cfg.opts.height else ""))
+                + (f" / 高さ: {cfg.opts.height}px" if cfg.opts.height else "")
+                + (f" / 切り出し: {core.fmt_time(cfg.opts.clip_start or 0)}-"
+                   + (core.fmt_time(cfg.opts.clip_end) if cfg.opts.clip_end is not None else "末尾")
+                   if cfg.opts.clip_start or cfg.opts.clip_end is not None else ""))
             log(f"対象: {len(files)} ファイル\n")
 
             out_dir = None
