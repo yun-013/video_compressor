@@ -48,7 +48,11 @@ def _find_tool(name):
     """
     exe = f"{name}.exe" if sys.platform == "win32" else name
     base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
-    for cand in (base / exe, base / "bin" / exe):
+    candidates = [base / exe, base / "bin" / exe]
+    if sys.platform == "darwin":
+        # Finder から起動した GUI アプリは Homebrew の PATH を引き継がないため明示的に探す
+        candidates += [Path("/opt/homebrew/bin") / name, Path("/usr/local/bin") / name]
+    for cand in candidates:
         if cand.is_file():
             return str(cand)
     return shutil.which(name)
