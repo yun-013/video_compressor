@@ -1,4 +1,4 @@
-# 配布用 exe をビルドして release フォルダにまとめるスクリプト
+﻿# 配布用 exe をビルドして release フォルダにまとめるスクリプト
 #
 # 前提:
 #   pip install pyinstaller tkinterdnd2
