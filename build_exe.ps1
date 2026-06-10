@@ -6,6 +6,8 @@
 #
 # 使い方:
 #   powershell -ExecutionPolicy Bypass -File build_exe.ps1
+#
+# 完成した release\動画圧縮ツール フォルダを、配布するときに手動で zip 圧縮してください。
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
@@ -26,8 +28,5 @@ if (-not (Test-Path "$rel\bin\ffmpeg.exe")) {
     Write-Warning "入手先: https://www.gyan.dev/ffmpeg/builds/ (release essentials)"
 }
 
-# 3. zip 化
-$zip = Join-Path $PSScriptRoot "release\動画圧縮ツール.zip"
-if (Test-Path $zip) { Remove-Item $zip }
-Compress-Archive -Path $rel -DestinationPath $zip
-Write-Host "完成: $zip"
+Write-Host "完成: $rel"
+Write-Host "配布するときはこのフォルダを zip 圧縮して送ってください。"
