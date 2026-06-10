@@ -32,6 +32,24 @@ CODECS = ("hevc", "h264", "av1")
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
+def _find_tool(name):
+    """ffmpeg / ffprobe の実体を探す。
+
+    exe 化 (PyInstaller) して配布した場合に同梱版を使えるよう、
+    exe (またはスクリプト) と同じフォルダ → bin サブフォルダ → PATH の順で探す。
+    """
+    exe = f"{name}.exe" if sys.platform == "win32" else name
+    base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
+    for cand in (base / exe, base / "bin" / exe):
+        if cand.is_file():
+            return str(cand)
+    return shutil.which(name)
+
+
+FFMPEG = _find_tool("ffmpeg")
+FFPROBE = _find_tool("ffprobe")
+
+
 def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                           errors="replace", creationflags=CREATE_NO_WINDOW, **kw)
@@ -39,7 +57,7 @@ def run(cmd, **kw):
 
 def detect_hw_encoders():
     """ffmpeg が対応しているハードウェアエンコーダーを検出する。"""
-    res = run(["ffmpeg", "-hide_banner", "-encoders"])
+    res = run([FFMPEG, "-hide_banner", "-encoders"])
     available = set()
     for line in res.stdout.splitlines():
         for hw in HW_PRIORITY:
@@ -52,7 +70,7 @@ def detect_hw_encoders():
 def hw_encoder_works(encoder):
     """実際に1フレームエンコードして、そのHWエンコーダーが動くか確認する。"""
     res = run([
-        "ffmpeg", "-hide_banner", "-v", "error",
+        FFMPEG, "-hide_banner", "-v", "error",
         "-f", "lavfi", "-i", "color=black:size=320x240:duration=0.1",
         "-frames:v", "1", "-c:v", encoder, "-f", "null", "-",
     ])
@@ -84,7 +102,7 @@ def encoder_label(codec, hw):
 def probe(path: Path):
     """動画の長さ・解像度・fps・コーデックを取得する。"""
     res = run([
-        "ffprobe", "-v", "error",
+        FFPROBE, "-v", "error",
         "-select_streams", "v:0",
         "-show_entries", "stream=codec_name,width,height,r_frame_rate",
         "-show_entries", "format=duration,size,bit_rate",
@@ -141,7 +159,7 @@ def build_command(src: Path, dst: Path, info, opts, hw):
     if opts.fps and info["fps"] > opts.fps + 0.01:
         vf.append(f"fps={opts.fps}")
 
-    cmd = ["ffmpeg", "-hide_banner", "-v", "error", "-y", "-i", str(src)]
+    cmd = [FFMPEG, "-hide_banner", "-v", "error", "-y", "-i", str(src)]
     if vf:
         cmd += ["-vf", ",".join(vf)]
     cmd += build_video_args(opts.codec, hw, opts.quality, opts.preset)
@@ -271,7 +289,7 @@ def collect_inputs(paths, log=print):
 
 
 def check_ffmpeg():
-    return bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
+    return bool(FFMPEG and FFPROBE)
 
 
 # ---------------------------------------------------------------- CLI

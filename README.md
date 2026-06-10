@@ -6,9 +6,11 @@ GUI とコマンドラインの両方で使えます。ファイル単体でも�
 ## 必要なもの
 
 - Python 3.8+（tkinter 同梱の標準インストール）
-- ffmpeg / ffprobe（PATH が通っていること）
+- ffmpeg / ffprobe（PATH が通っているか、スクリプトと同じ場所の `bin\` フォルダに配置）
 - tkinterdnd2（GUI のドラッグ&ドロップに使用・任意）: `pip install tkinterdnd2`
   ※ 未インストールでも D&D が無効になるだけで GUI は動作します
+
+※ 配布用 exe 版（後述）を使う場合は何もインストール不要です。
 
 ## GUI 版
 
@@ -93,8 +95,38 @@ python compress.py "video.mp4" --hw none
 VMAF の目安: 95以上 = 通常の視聴で見分け不可 / 90〜95 = ほぼ気づかない / 80〜90 = 注視・一時停止して比較すれば分かる。
 主に犠牲になるのは暗いシーンの微細なノイズ感・グラデーションで、明るく静かなシーンはほぼ完全に保たれる。
 
+## 配布用 exe の作り方（他の PC で使う場合）
+
+Python も ffmpeg も入っていない PC で使えるよう、exe + ffmpeg 同梱の zip を作成できます。
+
+```powershell
+pip install pyinstaller tkinterdnd2
+powershell -ExecutionPolicy Bypass -File build_exe.ps1
+```
+
+`release\動画圧縮ツール.zip`（約82MB）が完成します。中身:
+
+```
+動画圧縮ツール\
+├─ 動画圧縮ツール.exe   … 本体（ダブルクリックで起動）
+├─ 使い方.txt
+└─ bin\
+   ├─ ffmpeg.exe        … 同梱 FFmpeg（gyan.dev の release essentials ビルド）
+   ├─ ffprobe.exe
+   └─ FFMPEG_LICENSE.txt
+```
+
+相手の PC では zip を解凍してダブルクリックするだけ。インストール不要です。
+ffmpeg / ffprobe は「exe と同じフォルダ → `bin\` サブフォルダ → PATH」の順で探します。
+
+- 初回ビルド時は `bin\` に ffmpeg.exe / ffprobe.exe を配置する必要があります
+  （入手先: <https://www.gyan.dev/ffmpeg/builds/> の release essentials）
+- 初回起動時に SmartScreen の警告が出た場合は「詳細情報 → 実行」
+
 ## ファイル構成
 
 - `gui.py` — GUI 版（tkinter）
 - `compress.py` — コア処理 + コマンドライン版
 - `動画圧縮ツール.bat` — GUI をコンソールなしで起動するランチャー
+- `build_exe.ps1` — 配布用 exe ビルドスクリプト
+- `使い方.txt` — 配布 zip に同梱する説明書
