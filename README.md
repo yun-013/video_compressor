@@ -26,15 +26,21 @@ Python や FFmpeg のインストールは不要です（すべて同梱され�
 
 **[📦 最新版をダウンロード](https://github.com/yun-013/video_compressor/releases/latest)** — `video-compressor-macos.zip` をクリック
 
-1. 事前に [Homebrew](https://brew.sh/ja/) で ffmpeg を入れます: `brew install ffmpeg`
-2. zip を解凍して出てきた **`動画圧縮ツール.app`** をアプリケーションフォルダなど好きな場所に置き、ダブルクリックで起動します
+1. zip を解凍して出てきた **`動画圧縮ツール.app`** をアプリケーションフォルダなど好きな場所に置きます
+2. ダブルクリックで起動します
+
+ffmpeg は同梱されているためインストール不要です。
+対応機種: **Apple Silicon (M1 以降) の Mac**。Intel Mac は後述の「ソースから実行」を使ってください。
 
 > **「開発元を検証できないため開けません」と表示されたら**
 > 署名なしの個人配布アプリのため、初回はブロックされます。
 > アプリを**右クリック →「開く」→「開く」**、それでも開けない場合は
 > **システム設定 → プライバシーとセキュリティ →「このまま開く」** で起動できます。
+> 起動後に「ffmpeg が見つかりません」等が出る場合は、ターミナルで
+> `xattr -cr /Applications/動画圧縮ツール.app` を実行してから再起動してください
+> （ダウンロード由来の検疫属性を外すコマンドです。置き場所に合わせてパスは読み替えてください）。
 
-GPU エンコード: Apple Silicon では VideoToolbox を自動使用。Intel Mac は定品質モード非対応のため自動で CPU エンコードになります。
+GPU エンコード: VideoToolbox を自動使用します。
 
 ## ダウンロード (Linux)
 
@@ -196,6 +202,6 @@ GUI 版を Python から起動する場合: `python gui.py`（または `動画�
 
 本ツールのソースコードは [MIT License](LICENSE) です。
 
-配布版 zip に同梱している [FFmpeg](https://ffmpeg.org/) は GPL/LGPL のオープンソースソフトウェアです
-（ビルド入手元: [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)、ライセンス全文は同梱の `bin\FFMPEG_LICENSE.txt`、
-ソースコードは <https://ffmpeg.org/download.html> で入手できます）。
+配布版 (Windows zip / macOS .app) に同梱している [FFmpeg](https://ffmpeg.org/) は GPL/LGPL のオープンソースソフトウェアです
+（ビルド入手元: Windows は [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)、macOS は [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de/)。
+ライセンス全文は同梱の `bin/FFMPEG_LICENSE.txt`、ソースコードは <https://ffmpeg.org/download.html> で入手できます）。

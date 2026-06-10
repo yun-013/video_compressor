@@ -4,7 +4,8 @@
 #         video-compressor-macos.zip / video-compressor-linux-x86_64.tar.gz がリリースに追加される。
 # Windows 版 zip (ffmpeg 同梱) は従来どおり build_exe.ps1 でローカルビルドして添付する。
 #
-# 注意: macOS / Linux 版には ffmpeg を同梱しない (各自 brew / apt でインストール。README 参照)。
+# 注意: macOS 版は静的ビルドの ffmpeg を .app 内に同梱する (インストール不要)。
+#       Linux 版には同梱しない (各自 apt 等でインストール。README 参照)。
 
 name: Release builds (macOS / Linux)
 
@@ -30,6 +31,33 @@ jobs:
           python -m pip install pyinstaller tkinterdnd2
           python -m PyInstaller --noconfirm --windowed \
             --name "動画圧縮ツール" --collect-data tkinterdnd2 gui.py
+
+      # 静的ビルドの ffmpeg / ffprobe を .app に同梱する (ユーザーの事前インストール不要に)
+      # _find_tool が Contents/MacOS/bin を探すのでそこに配置する
+      - name: Bundle static ffmpeg into .app
+        run: |
+          mkdir -p ffmpeg_dl
+          curl -sL --retry 3 --retry-all-errors -o ffmpeg_dl/ffmpeg.zip \
+            "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip"
+          curl -sL --retry 3 --retry-all-errors -o ffmpeg_dl/ffprobe.zip \
+            "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffprobe.zip"
+          unzip -o ffmpeg_dl/ffmpeg.zip -d ffmpeg_dl
+          unzip -o ffmpeg_dl/ffprobe.zip -d ffmpeg_dl
+          BIN="dist/動画圧縮ツール.app/Contents/MacOS/bin"
+          mkdir -p "$BIN"
+          cp ffmpeg_dl/ffmpeg ffmpeg_dl/ffprobe "$BIN/"
+          chmod +x "$BIN/ffmpeg" "$BIN/ffprobe"
+          printf '%s\n' \
+            "同梱の ffmpeg / ffprobe は GPL ライセンスのオープンソースソフトウェアです。" \
+            "ビルド入手元: https://ffmpeg.martin-riedl.de/" \
+            "ソースコード: https://ffmpeg.org/download.html" \
+            > "$BIN/FFMPEG_LICENSE.txt"
+          # ファイル追加で ad-hoc 署名が壊れるため、同梱バイナリと .app を再署名する
+          codesign --force -s - "$BIN/ffmpeg" "$BIN/ffprobe"
+          codesign --force -s - "dist/動画圧縮ツール.app"
+          # 同梱した ffmpeg が実行できることを確認
+          "$BIN/ffmpeg" -version | head -1
+          "$BIN/ffprobe" -version | head -1
 
       - name: Package
         run: ditto -c -k --keepParent "dist/動画圧縮ツール.app" video-compressor-macos.zip
