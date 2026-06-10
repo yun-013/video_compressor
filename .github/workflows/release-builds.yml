@@ -12,6 +12,11 @@ name: Release builds (macOS / Linux)
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "アップロード先のリリースタグ (例: v1.0.4)"
+        required: true
 
 permissions:
   contents: write
@@ -20,7 +25,7 @@ jobs:
   build-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -47,11 +52,12 @@ jobs:
           mkdir -p "$BIN"
           cp ffmpeg_dl/ffmpeg ffmpeg_dl/ffprobe "$BIN/"
           chmod +x "$BIN/ffmpeg" "$BIN/ffprobe"
+          # ライセンスは Resources に置く (Contents/MacOS 以下に非コードを置くと codesign が失敗する)
           printf '%s\n' \
             "同梱の ffmpeg / ffprobe は GPL ライセンスのオープンソースソフトウェアです。" \
             "ビルド入手元: https://ffmpeg.martin-riedl.de/" \
             "ソースコード: https://ffmpeg.org/download.html" \
-            > "$BIN/FFMPEG_LICENSE.txt"
+            > "dist/動画圧縮ツール.app/Contents/Resources/FFMPEG_LICENSE.txt"
           # ファイル追加で ad-hoc 署名が壊れるため、同梱バイナリと .app を再署名する
           codesign --force -s - "$BIN/ffmpeg" "$BIN/ffprobe"
           codesign --force -s - "dist/動画圧縮ツール.app"
@@ -65,12 +71,12 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" video-compressor-macos.zip --clobber
+        run: gh release upload "${{ github.event.release.tag_name || inputs.tag }}" video-compressor-macos.zip --clobber
 
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -90,4 +96,4 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" video-compressor-linux-x86_64.tar.gz --clobber
+        run: gh release upload "${{ github.event.release.tag_name || inputs.tag }}" video-compressor-linux-x86_64.tar.gz --clobber

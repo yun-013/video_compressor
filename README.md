@@ -204,4 +204,5 @@ GUI 版を Python から起動する場合: `python gui.py`（または `動画�
 
 配布版 (Windows zip / macOS .app) に同梱している [FFmpeg](https://ffmpeg.org/) は GPL/LGPL のオープンソースソフトウェアです
 （ビルド入手元: Windows は [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)、macOS は [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de/)。
-ライセンス全文は同梱の `bin/FFMPEG_LICENSE.txt`、ソースコードは <https://ffmpeg.org/download.html> で入手できます）。
+ライセンス全文は同梱の `FFMPEG_LICENSE.txt`（Windows: `bin` フォルダ内、macOS: アプリ内 `Contents/Resources`）、
+ソースコードは <https://ffmpeg.org/download.html> で入手できます）。
