@@ -1,0 +1,65 @@
+# リリース公開時に macOS / Linux 用の GUI パッケージをビルドして添付するワークフロー
+#
+# 使い方: GitHub Releases でリリースを公開する (gh release create vX.Y.Z ...) と自動で起動し、
+#         video-compressor-macos.zip / video-compressor-linux-x86_64.tar.gz がリリースに追加される。
+# Windows 版 zip (ffmpeg 同梱) は従来どおり build_exe.ps1 でローカルビルドして添付する。
+#
+# 注意: macOS / Linux 版には ffmpeg を同梱しない (各自 brew / apt でインストール。README 参照)。
+
+name: Release builds (macOS / Linux)
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build .app
+        run: |
+          python -m pip install pyinstaller tkinterdnd2
+          python -m PyInstaller --noconfirm --windowed \
+            --name "動画圧縮ツール" --collect-data tkinterdnd2 gui.py
+
+      - name: Package
+        run: ditto -c -k --keepParent "dist/動画圧縮ツール.app" video-compressor-macos.zip
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" video-compressor-macos.zip --clobber
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk python3-venv
+          python3 -m venv venv
+          venv/bin/pip install pyinstaller tkinterdnd2
+
+      - name: Build
+        run: |
+          venv/bin/python -m PyInstaller --noconfirm --onefile --windowed \
+            --name video-compressor --collect-data tkinterdnd2 gui.py
+
+      - name: Package
+        run: tar -czf video-compressor-linux-x86_64.tar.gz -C dist video-compressor
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" video-compressor-linux-x86_64.tar.gz --clobber

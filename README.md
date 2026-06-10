@@ -22,9 +22,37 @@ Python や FFmpeg のインストールは不要です（すべて同梱され�
 > 個人配布の署名なしアプリのため、初回起動時に警告が出ることがあります。
 > 「**詳細情報**」→「**実行**」の順にクリックすると起動できます。
 
-## macOS / Linux で使う
+## ダウンロード (macOS)
 
-macOS / Linux では Python (3.8+) からそのまま実行します。事前に ffmpeg と tkinter を入れてください。
+**[📦 最新版をダウンロード](https://github.com/yun-013/video_compressor/releases/latest)** — `video-compressor-macos.zip` をクリック
+
+1. 事前に [Homebrew](https://brew.sh/ja/) で ffmpeg を入れます: `brew install ffmpeg`
+2. zip を解凍して出てきた **`動画圧縮ツール.app`** をアプリケーションフォルダなど好きな場所に置き、ダブルクリックで起動します
+
+> **「開発元を検証できないため開けません」と表示されたら**
+> 署名なしの個人配布アプリのため、初回はブロックされます。
+> アプリを**右クリック →「開く」→「開く」**、それでも開けない場合は
+> **システム設定 → プライバシーとセキュリティ →「このまま開く」** で起動できます。
+
+GPU エンコード: Apple Silicon では VideoToolbox を自動使用。Intel Mac は定品質モード非対応のため自動で CPU エンコードになります。
+
+## ダウンロード (Linux)
+
+**[📦 最新版をダウンロード](https://github.com/yun-013/video_compressor/releases/latest)** — `video-compressor-linux-x86_64.tar.gz` をクリック
+
+```bash
+sudo apt install ffmpeg        # 事前に ffmpeg を入れる (Fedora: sudo dnf install ffmpeg)
+tar -xzf video-compressor-linux-x86_64.tar.gz
+./video-compressor             # GUI が起動します
+```
+
+Ubuntu 24.04 以降相当の環境 (glibc 2.39+) で動作します。古い環境では後述の「ソースから実行」を使ってください。
+
+GPU エンコード: NVENC (NVIDIA) / QSV (Intel) / VAAPI (Intel・AMD) を自動検出します（ffmpeg と GPU ドライバが対応している範囲で使用。VAAPI はユーザーが `render` グループに入っている必要があります）。
+
+## ソースから実行する (macOS / Linux)
+
+Python 3.8+ があれば配布版を使わずソースから実行できます。
 
 ```bash
 # macOS (Homebrew)
@@ -40,16 +68,11 @@ sudo dnf install ffmpeg python3-tkinter
 ```bash
 git clone https://github.com/yun-013/video_compressor.git
 cd video_compressor
-python3 gui.py            # GUI 版を起動
+python3 gui.py              # GUI 版を起動
 python3 compress.py --help  # コマンドライン版
 ```
 
 ドラッグ&ドロップを使う場合は `pip3 install tkinterdnd2` も実行してください（なくても D&D 以外は動作します）。
-
-GPU エンコードは自動検出されます:
-
-- **macOS**: VideoToolbox（Apple Silicon。Intel Mac は定品質モード非対応のため CPU エンコードを推奨）
-- **Linux**: NVENC (NVIDIA) / QSV (Intel) / VAAPI (Intel・AMD) — ディストリビューションの ffmpeg が対応している範囲で使用
 
 ## 使い方
 
@@ -164,9 +187,10 @@ GUI 版を Python から起動する場合: `python gui.py`（または `動画�
 
 - `gui.py` — GUI 版(tkinter)
 - `compress.py` — コア処理 + コマンドライン版
-- `動画圧縮ツール.bat` — GUI をコンソールなしで起動するランチャー
-- `build_exe.ps1` — 配布用 exe ビルドスクリプト（ビルド・リリース手順は冒頭のコメント参照）
-- `使い方.txt` — 配布フォルダに同梱する説明書
+- `動画圧縮ツール.bat` — GUI をコンソールなしで起動するランチャー (Windows)
+- `build_exe.ps1` — Windows 配布用 exe ビルドスクリプト（ビルド・リリース手順は冒頭のコメント参照）
+- `.github/workflows/release-builds.yml` — リリース公開時に macOS / Linux 版を自動ビルドして添付
+- `使い方.txt` — Windows 配布フォルダに同梱する説明書
 
 ## ライセンス
 
