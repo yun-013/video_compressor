@@ -1,14 +1,14 @@
 # 動画圧縮ツール
 
-画質をなるべく保ったまま、動画のファイルサイズを大幅に小さくするツールです。
-Windows / macOS / Linux で動作します。ドラッグ&ドロップして「圧縮開始」を押すだけで使えます。
+画質をなるべく保ったまま、動画のファイルサイズを大幅に小さくする Windows 用ツールです。
+インストール不要。ドラッグ&ドロップして「圧縮開始」を押すだけで使えます。
 
 - 1ファイルでもフォルダ一括でも OK（mp4 / mov / mkv / avi など主要形式に対応）
-- GPU を自動検出して高速圧縮（NVIDIA / Intel / AMD / Apple Silicon 対応）
+- GPU を自動検出して高速圧縮（NVIDIA / Intel / AMD 対応）
 - 進捗バー・残り時間表示つき。途中で安全に中止できます
 - 目安: 一般的な動画で **元の 20% 前後のサイズ**（80%減）まで小さくなります
 
-## ダウンロード (Windows)
+## ダウンロード
 
 **[📦 最新版をダウンロード](https://github.com/yun-013/video_compressor/releases/latest)** — `video-compressor-windows.zip` をクリック
 
@@ -21,35 +21,6 @@ Python や FFmpeg のインストールは不要です（すべて同梱され�
 > **「WindowsによってPCが保護されました」と表示されたら**
 > 個人配布の署名なしアプリのため、初回起動時に警告が出ることがあります。
 > 「**詳細情報**」→「**実行**」の順にクリックすると起動できます。
-
-## macOS / Linux で使う
-
-macOS / Linux では Python (3.8+) からそのまま実行します。事前に ffmpeg と tkinter を入れてください。
-
-```bash
-# macOS (Homebrew)
-brew install ffmpeg python-tk
-
-# Ubuntu / Debian
-sudo apt install ffmpeg python3-tk
-
-# Fedora
-sudo dnf install ffmpeg python3-tkinter
-```
-
-```bash
-git clone https://github.com/yun-013/video_compressor.git
-cd video_compressor
-python3 gui.py            # GUI 版を起動
-python3 compress.py --help  # コマンドライン版
-```
-
-ドラッグ&ドロップを使う場合は `pip3 install tkinterdnd2` も実行してください（なくても D&D 以外は動作します）。
-
-GPU エンコードは自動検出されます:
-
-- **macOS**: VideoToolbox（Apple Silicon。Intel Mac は定品質モード非対応のため CPU エンコードを推奨）
-- **Linux**: NVENC (NVIDIA) / QSV (Intel) / VAAPI (Intel・AMD) — ディストリビューションの ffmpeg が対応している範囲で使用
 
 ## 使い方
 
@@ -113,8 +84,8 @@ GPU エンコードは自動検出されます:
 
 ## 上級者向け: コマンドライン版
 
-Python 3.8+ がある環境（Windows / macOS / Linux）では、`compress.py` を直接実行できます。
-ffmpeg / ffprobe は「スクリプトと同じフォルダ → `bin` サブフォルダ → PATH」の順で探します。
+Python 3.8+ がある環境では、`compress.py` を直接実行できます。
+ffmpeg / ffprobe は「スクリプトと同じフォルダ → `bin\` サブフォルダ → PATH」の順で探します。
 
 ```powershell
 # フォルダ内の動画をすべて圧縮（元ファイルは残し、_compressed 付きで保存）
@@ -146,7 +117,7 @@ python compress.py "video.mp4" --hw none
 | `--fps N` | 出力フレームレート（元より高い値は無視） |
 | `--height N` | 出力の縦解像度（例: 720。元より大きい値は無視） |
 | `--codec hevc\|h264\|av1` | 出力コーデック（既定: hevc） |
-| `--hw auto\|nvenc\|qsv\|amf\|videotoolbox\|vaapi\|none` | ハードウェアエンコード（既定: auto。`none` で CPU） |
+| `--hw auto\|nvenc\|qsv\|amf\|none` | ハードウェアエンコード（既定: auto。`none` で CPU） |
 | `--preset NAME` | CPU エンコード時の x264/x265 プリセット（既定: medium） |
 | `--audio copy\|aac\|none` | 音声処理（既定: copy = 無劣化。none = 音声削除） |
 | `--audio-bitrate N` | `--audio aac` 時のビットレート（既定: 160k） |

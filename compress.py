@@ -3,8 +3,6 @@
 
 画質をなるべく維持しながら動画のファイルサイズを削減する。
 ファイル単体・フォルダ一括の両方に対応。GUI 版は gui.py を起動。
-Windows / macOS / Linux で動作 (GPU エンコードは
-nvenc・qsv・amf / videotoolbox / vaapi を自動検出)。
 
 例:
     python compress.py "D:\\videos"                     # フォルダ内を一括圧縮 (GPU/HEVC)
@@ -26,13 +24,8 @@ from pathlib import Path
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".ts", ".flv", ".wmv", ".mpg", ".mpeg"}
 
-# ハードウェアエンコーダーの優先順位 (検出された順に使用)。OS ごとに利用可能な種類が異なる
-if sys.platform == "win32":
-    HW_PRIORITY = ["nvenc", "qsv", "amf"]
-elif sys.platform == "darwin":
-    HW_PRIORITY = ["videotoolbox"]
-else:  # Linux など
-    HW_PRIORITY = ["nvenc", "qsv", "vaapi"]
+# ハードウェアエンコーダーの優先順位 (検出された順に使用)
+HW_PRIORITY = ["nvenc", "qsv", "amf"]
 
 CODECS = ("hevc", "h264", "av1")
 
@@ -75,48 +68,27 @@ def detect_hw_encoders():
     return available
 
 
-def hw_input_args(hw):
-    """入力 (-i) より前に置く、HWエンコーダー固有のオプション。"""
-    if hw == "vaapi":
-        # デバイス省略時は /dev/dri/renderD128 などが自動選択される
-        return ["-init_hw_device", "vaapi=va", "-filter_hw_device", "va"]
-    return []
+def hw_encoder_works(encoder):
+    """実際に1フレームエンコードして、そのHWエンコーダーが動くか確認する。"""
+    res = run([
+        FFMPEG, "-hide_banner", "-v", "error",
+        "-f", "lavfi", "-i", "color=black:size=320x240:duration=0.1",
+        "-frames:v", "1", "-c:v", encoder, "-f", "null", "-",
+    ])
+    return res.returncode == 0
 
 
-def hw_filter_args(hw):
-    """-vf チェーンの末尾に追加する、HWエンコーダー固有のフィルター。"""
-    if hw == "vaapi":
-        return ["format=nv12", "hwupload"]
-    return []
-
-
-def hw_encoder_works(codec, hw, quality):
-    """実際に1フレームエンコードして、そのHWエンコーダーが動くか確認する。
-
-    本番の圧縮と同じオプションでテストすることで、エンコーダー自体は存在しても
-    使用モードに非対応な環境 (例: Intel Mac の VideoToolbox は定品質モード不可) を弾く。
-    """
-    cmd = [FFMPEG, "-hide_banner", "-v", "error", *hw_input_args(hw),
-           "-f", "lavfi", "-i", "color=black:size=320x240:duration=0.1"]
-    hw_vf = hw_filter_args(hw)
-    if hw_vf:
-        cmd += ["-vf", ",".join(hw_vf)]
-    cmd += ["-frames:v", "1", *build_video_args(codec, hw, quality, "medium"),
-            "-f", "null", "-"]
-    return run(cmd).returncode == 0
-
-
-def pick_hw(codec, hw_request="auto", quality=24):
+def pick_hw(codec, hw_request="auto"):
     """使用するHWエンコーダーを決める。None = CPU。不可なら ValueError。"""
     if hw_request == "none":
         return None
     if hw_request == "auto":
         detected = detect_hw_encoders()
         for cand in HW_PRIORITY:
-            if cand in detected and hw_encoder_works(codec, cand, quality):
+            if cand in detected and hw_encoder_works(f"{codec}_{cand}"):
                 return cand
         return None
-    if not hw_encoder_works(codec, hw_request, quality):
+    if not hw_encoder_works(f"{codec}_{hw_request}"):
         raise ValueError(f"{codec}_{hw_request} はこの環境で使用できません。")
     return hw_request
 
@@ -185,14 +157,6 @@ def build_video_args(codec, hw, quality, preset):
         qvbr_level = max(1, min(51, 52 - quality))
         return ["-c:v", f"{codec}_amf", "-quality", "quality", "-rc", "qvbr",
                 "-qvbr_quality_level", str(qvbr_level)]
-    if hw == "videotoolbox":
-        # macOS。-q:v は 1-100 で大きいほど高画質なので CRF 風の値から変換する
-        # (定品質モードは Apple Silicon のみ対応。Intel Mac では失敗するため CPU を使うこと)
-        qv = max(1, min(100, 100 - quality * 2))
-        return ["-c:v", f"{codec}_videotoolbox", "-q:v", str(qv)]
-    if hw == "vaapi":
-        # Linux (Intel/AMD GPU)。固定QPモード
-        return ["-c:v", f"{codec}_vaapi", "-qp", str(quality)]
     # ソフトウェアエンコード
     if codec == "hevc":
         return ["-c:v", "libx265", "-crf", str(quality), "-preset", preset,
@@ -212,12 +176,10 @@ def build_command(src: Path, dst: Path, info, opts, hw):
     if opts.fps and info["fps"] > opts.fps + 0.01:
         vf.append(f"fps={opts.fps}")
 
-    vf += hw_filter_args(hw)
-
     start = getattr(opts, "clip_start", None)
     end = getattr(opts, "clip_end", None)
 
-    cmd = [FFMPEG, "-hide_banner", "-v", "error", "-y", *hw_input_args(hw)]
+    cmd = [FFMPEG, "-hide_banner", "-v", "error", "-y"]
     if start:
         cmd += ["-ss", f"{start:g}"]
     cmd += ["-i", str(src)]
@@ -226,10 +188,7 @@ def build_command(src: Path, dst: Path, info, opts, hw):
     if vf:
         cmd += ["-vf", ",".join(vf)]
     cmd += build_video_args(opts.codec, hw, opts.quality, opts.preset)
-    if hw != "vaapi":  # vaapi は hwupload 後の GPU フレームを渡すため pix_fmt 指定不可
-        cmd += ["-pix_fmt", "yuv420p"]
-    if opts.codec == "hevc" and dst.suffix.lower() == ".mp4":
-        cmd += ["-tag:v", "hvc1"]  # macOS / iOS の標準プレイヤーで再生可能にする
+    cmd += ["-pix_fmt", "yuv420p"]
     if opts.audio == "none":
         cmd += ["-an"]
     elif opts.audio == "copy":
@@ -398,8 +357,7 @@ def main():
                     help="クリップ終了位置 (例: 300 / 5:00)。省略時は末尾まで")
     ap.add_argument("--fps", type=float, help="出力フレームレート (例: 30)。元より高い値は無視")
     ap.add_argument("--height", type=int, help="出力の縦解像度 (例: 720)。元より大きい値は無視")
-    ap.add_argument("--hw", choices=["auto", "nvenc", "qsv", "amf", "videotoolbox", "vaapi", "none"],
-                    default="auto",
+    ap.add_argument("--hw", choices=["auto", "nvenc", "qsv", "amf", "none"], default="auto",
                     help="ハードウェアエンコード (既定: auto=自動検出, none=CPUで最高圧縮率)")
     ap.add_argument("--preset", default="medium",
                     help="CPUエンコード時のプリセット (既定: medium。slow でさらに圧縮)")
@@ -418,7 +376,7 @@ def main():
         sys.exit("エラー: --end は --start より後の時間を指定してください。")
 
     try:
-        hw = pick_hw(args.codec, args.hw, args.quality)
+        hw = pick_hw(args.codec, args.hw)
     except ValueError as e:
         sys.exit(f"エラー: {e}")
 
