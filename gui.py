@@ -5,6 +5,7 @@
 """
 
 import queue
+import sys
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -337,7 +338,7 @@ class App:
         log = lambda m: self._post("log", m)
         try:
             try:
-                hw = core.pick_hw(cfg.opts.codec, cfg.opts.hw)
+                hw = core.pick_hw(cfg.opts.codec, cfg.opts.hw, cfg.opts.quality)
             except ValueError as e:
                 self._post("error", str(e))
                 return
@@ -450,11 +451,12 @@ class App:
 
 def main():
     root = TkinterDnD.Tk() if HAS_DND else tk.Tk()
-    try:
-        from ctypes import windll
-        windll.shcore.SetProcessDpiAwareness(1)  # 高DPI対応
-    except Exception:
-        pass
+    if sys.platform == "win32":
+        try:
+            from ctypes import windll
+            windll.shcore.SetProcessDpiAwareness(1)  # 高DPI対応
+        except Exception:
+            pass
     App(root)
     root.mainloop()
 
