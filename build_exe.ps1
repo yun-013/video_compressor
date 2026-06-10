@@ -3,11 +3,15 @@
 # 前提:
 #   pip install pyinstaller tkinterdnd2
 #   ffmpeg.exe / ffprobe.exe を用意しておく (release\動画圧縮ツール\bin に配置済みなら再利用)
+#   初回は https://www.gyan.dev/ffmpeg/builds/ の release essentials から入手して bin\ に配置
 #
 # 使い方:
 #   powershell -ExecutionPolicy Bypass -File build_exe.ps1
+#   → release\動画圧縮ツール フォルダが完成 (個別に送るときはこのフォルダを手動で zip 圧縮)
 #
-# 完成した release\動画圧縮ツール フォルダを、配布するときに手動で zip 圧縮してください。
+# GitHub Releases への公開手順 (バージョンは適宜変更):
+#   Compress-Archive -Path "release\動画圧縮ツール" -DestinationPath "release\video-compressor-windows.zip" -Force
+#   gh release create v1.0.1 "release\video-compressor-windows.zip" --title "v1.0.1" --notes "変更点を記載"
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot

@@ -125,43 +125,12 @@ python compress.py "video.mp4" --hw none
 GUI 版を Python から起動する場合: `python gui.py`（または `動画圧縮ツール.bat`）。
 ドラッグ&ドロップには `pip install tkinterdnd2` が必要です（なくても D&D 以外は動作）。
 
-## 開発者向け: 配布用 exe のビルド
-
-```powershell
-pip install pyinstaller tkinterdnd2
-powershell -ExecutionPolicy Bypass -File build_exe.ps1
-```
-
-`release\動画圧縮ツール` フォルダが完成します。誰かに送るときはこのフォルダを手動で zip 圧縮してください。
-
-```
-動画圧縮ツール\
-├─ 動画圧縮ツール.exe   … 本体（PyInstaller --onefile）
-├─ 使い方.txt
-└─ bin\
-   ├─ ffmpeg.exe        … 同梱 FFmpeg（gyan.dev の release essentials ビルド）
-   ├─ ffprobe.exe
-   └─ FFMPEG_LICENSE.txt
-```
-
-- 初回ビルド時は `bin\` に ffmpeg.exe / ffprobe.exe を配置してください
-  （入手先: <https://www.gyan.dev/ffmpeg/builds/> の release essentials。2回目以降は再利用されます）
-- `release/` `build/` `dist/` はビルド生成物のため git 管理外です
-
-### GitHub Releases への公開
-
-```powershell
-# release\動画圧縮ツール を zip 化してリリースに添付 (バージョンは適宜変更)
-Compress-Archive -Path "release\動画圧縮ツール" -DestinationPath "release\video-compressor-windows.zip" -Force
-gh release create v1.0.1 "release\video-compressor-windows.zip" --title "v1.0.1" --notes "変更点を記載"
-```
-
-### ファイル構成
+## ファイル構成
 
 - `gui.py` — GUI 版(tkinter)
 - `compress.py` — コア処理 + コマンドライン版
 - `動画圧縮ツール.bat` — GUI をコンソールなしで起動するランチャー
-- `build_exe.ps1` — 配布用 exe ビルドスクリプト
+- `build_exe.ps1` — 配布用 exe ビルドスクリプト（ビルド・リリース手順は冒頭のコメント参照）
 - `使い方.txt` — 配布フォルダに同梱する説明書
 
 ## ライセンス
