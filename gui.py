@@ -34,6 +34,22 @@ AUDIO_CHOICES = {
     "AAC 160kbps に再圧縮": "aac",
     "なし (音声を削除)": "none",
 }
+# OBS などの多重音声トラック録画向け。番号は「ファイル情報」の 音声1, 音声2... に対応
+AUDIO_TRACK_CHOICES = {
+    "自動 (既定の1本)": "auto",
+    "すべて保持 (多重トラック)": "all",
+    **{f"音声{n} のみ": n for n in range(1, 7)},
+}
+FORMAT_CHOICES = {
+    "MP4 (推奨)": "mp4",
+    "MKV": "mkv",
+    "MOV": "mov",
+    "WebM (AV1専用)": "webm",
+    "MP3 — 音声のみ": "mp3",
+    "M4A / AAC — 音声のみ": "m4a",
+    "WAV — 音声のみ": "wav",
+    "FLAC — 音声のみ": "flac",
+}
 FPS_CHOICES = ["変更しない", "60", "30", "24"]
 HEIGHT_CHOICES = ["変更しない", "2160 (4K)", "1440 (WQHD)", "1080 (フルHD)", "720", "480"]
 NO_CHANGE = "変更しない"
@@ -93,6 +109,7 @@ class App:
         ttk.Button(btn_row, text="フォルダ追加", command=self.add_folder).pack(side="left", padx=2)
         ttk.Button(btn_row, text="選択を削除", command=self.remove_selected).pack(side="left", padx=2)
         ttk.Button(btn_row, text="クリア", command=lambda: self.input_list.delete(0, "end")).pack(side="left", padx=2)
+        ttk.Button(btn_row, text="ファイル情報", command=self.show_info).pack(side="right", padx=2)
 
         # --- 圧縮設定 ---
         opt_frame = ttk.LabelFrame(main, text="圧縮設定", padding=6)
@@ -104,33 +121,42 @@ class App:
         qrow = ttk.Frame(opt_frame)
         qrow.grid(row=0, column=1, sticky="w", pady=3)
         self.quality_var = tk.IntVar(value=24)
-        ttk.Spinbox(qrow, from_=14, to=35, width=5, textvariable=self.quality_var).pack(side="left")
+        self.quality_spin = ttk.Spinbox(qrow, from_=14, to=35, width=5, textvariable=self.quality_var)
+        self.quality_spin.pack(side="left")
         ttk.Label(qrow, text=" 小=高画質・大容量 (18:ほぼ無劣化 / 24:標準 / 28:容量優先)").pack(side="left")
 
         ttk.Label(opt_frame, text="コーデック:").grid(row=1, column=0, sticky="e", padx=4, pady=3)
         self.codec_var = tk.StringVar(value=list(CODEC_CHOICES)[0])
-        ttk.Combobox(opt_frame, textvariable=self.codec_var, values=list(CODEC_CHOICES),
-                     state="readonly", width=22).grid(row=1, column=1, sticky="w", pady=3)
+        self.codec_box = ttk.Combobox(opt_frame, textvariable=self.codec_var, values=list(CODEC_CHOICES),
+                                      state="readonly", width=22)
+        self.codec_box.grid(row=1, column=1, sticky="w", pady=3)
 
         ttk.Label(opt_frame, text="エンコード:").grid(row=1, column=2, sticky="e", padx=4, pady=3)
         self.hw_var = tk.StringVar(value=list(HW_CHOICES)[0])
-        ttk.Combobox(opt_frame, textvariable=self.hw_var, values=list(HW_CHOICES),
-                     state="readonly", width=22).grid(row=1, column=3, sticky="w", pady=3)
+        self.hw_box = ttk.Combobox(opt_frame, textvariable=self.hw_var, values=list(HW_CHOICES),
+                                   state="readonly", width=22)
+        self.hw_box.grid(row=1, column=3, sticky="w", pady=3)
 
         ttk.Label(opt_frame, text="フレームレート:").grid(row=2, column=0, sticky="e", padx=4, pady=3)
         self.fps_var = tk.StringVar(value=NO_CHANGE)
-        ttk.Combobox(opt_frame, textvariable=self.fps_var, values=FPS_CHOICES,
-                     width=22).grid(row=2, column=1, sticky="w", pady=3)
+        self.fps_box = ttk.Combobox(opt_frame, textvariable=self.fps_var, values=FPS_CHOICES, width=22)
+        self.fps_box.grid(row=2, column=1, sticky="w", pady=3)
 
         ttk.Label(opt_frame, text="解像度 (高さ):").grid(row=2, column=2, sticky="e", padx=4, pady=3)
         self.height_var = tk.StringVar(value=NO_CHANGE)
-        ttk.Combobox(opt_frame, textvariable=self.height_var, values=HEIGHT_CHOICES,
-                     width=22).grid(row=2, column=3, sticky="w", pady=3)
+        self.height_box = ttk.Combobox(opt_frame, textvariable=self.height_var, values=HEIGHT_CHOICES,
+                                       width=22)
+        self.height_box.grid(row=2, column=3, sticky="w", pady=3)
 
         ttk.Label(opt_frame, text="音声:").grid(row=3, column=0, sticky="e", padx=4, pady=3)
         self.audio_var = tk.StringVar(value=list(AUDIO_CHOICES)[0])
         ttk.Combobox(opt_frame, textvariable=self.audio_var, values=list(AUDIO_CHOICES),
                      state="readonly", width=22).grid(row=3, column=1, sticky="w", pady=3)
+
+        ttk.Label(opt_frame, text="音声トラック:").grid(row=3, column=2, sticky="e", padx=4, pady=3)
+        self.audio_track_var = tk.StringVar(value=list(AUDIO_TRACK_CHOICES)[0])
+        ttk.Combobox(opt_frame, textvariable=self.audio_track_var, values=list(AUDIO_TRACK_CHOICES),
+                     state="readonly", width=22).grid(row=3, column=3, sticky="w", pady=3)
 
         ttk.Label(opt_frame, text="切り出し:").grid(row=4, column=0, sticky="e", padx=4, pady=3)
         clip_row = ttk.Frame(opt_frame)
@@ -148,20 +174,30 @@ class App:
         out_frame.pack(fill="x", **pad)
         out_frame.columnconfigure(1, weight=1)
 
+        fmt_row = ttk.Frame(out_frame)
+        fmt_row.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        ttk.Label(fmt_row, text="出力形式:").pack(side="left")
+        self.format_var = tk.StringVar(value=list(FORMAT_CHOICES)[0])
+        fmt_box = ttk.Combobox(fmt_row, textvariable=self.format_var, values=list(FORMAT_CHOICES),
+                               state="readonly", width=22)
+        fmt_box.pack(side="left", padx=4)
+        fmt_box.bind("<<ComboboxSelected>>", self._update_format)
+        ttk.Label(fmt_row, text="(音声のみを選ぶと映像を捨てて音声を書き出します)").pack(side="left")
+
         self.outmode_var = tk.StringVar(value="suffix")
 
         ttk.Radiobutton(out_frame, text="同じフォルダに別名で保存 / 接尾辞:",
                         variable=self.outmode_var, value="suffix",
-                        command=self._update_outmode).grid(row=0, column=0, sticky="w", pady=2)
+                        command=self._update_outmode).grid(row=1, column=0, sticky="w", pady=2)
         self.suffix_var = tk.StringVar(value="_compressed")
         self.suffix_entry = ttk.Entry(out_frame, textvariable=self.suffix_var, width=20)
-        self.suffix_entry.grid(row=0, column=1, sticky="w", padx=4, pady=2)
+        self.suffix_entry.grid(row=1, column=1, sticky="w", padx=4, pady=2)
 
         ttk.Radiobutton(out_frame, text="指定フォルダに保存:",
                         variable=self.outmode_var, value="dir",
-                        command=self._update_outmode).grid(row=1, column=0, sticky="w", pady=2)
+                        command=self._update_outmode).grid(row=2, column=0, sticky="w", pady=2)
         dir_row = ttk.Frame(out_frame)
-        dir_row.grid(row=1, column=1, sticky="ew", padx=4, pady=2)
+        dir_row.grid(row=2, column=1, sticky="ew", padx=4, pady=2)
         dir_row.columnconfigure(0, weight=1)
         self.outdir_var = tk.StringVar()
         self.outdir_entry = ttk.Entry(dir_row, textvariable=self.outdir_var)
@@ -171,15 +207,16 @@ class App:
 
         ttk.Radiobutton(out_frame, text="元ファイルを置き換える (元動画は削除されます)",
                         variable=self.outmode_var, value="replace",
-                        command=self._update_outmode).grid(row=2, column=0, columnspan=2, sticky="w", pady=2)
+                        command=self._update_outmode).grid(row=3, column=0, columnspan=2, sticky="w", pady=2)
 
         self.overwrite_var = tk.BooleanVar(value=False)
         self.overwrite_chk = ttk.Checkbutton(
             out_frame, text="出力先に同名ファイルがあれば上書きする (オフ: スキップ)",
             variable=self.overwrite_var)
-        self.overwrite_chk.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.overwrite_chk.grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         self._update_outmode()
+        self._update_format()
 
         # --- 実行 ---
         run_frame = ttk.Frame(main)
@@ -205,6 +242,14 @@ class App:
         self.outdir_entry.config(state=state)
         self.outdir_btn.config(state=state)
         self.overwrite_chk.config(state="disabled" if mode == "replace" else "normal")
+
+    def _update_format(self, _event=None):
+        """音声のみ形式が選ばれたら映像関連の設定を無効化する。"""
+        audio_only = core.is_audio_format(FORMAT_CHOICES[self.format_var.get()])
+        for widget, normal_state in ((self.quality_spin, "normal"), (self.codec_box, "readonly"),
+                                     (self.hw_box, "readonly"), (self.fps_box, "normal"),
+                                     (self.height_box, "normal")):
+            widget.config(state="disabled" if audio_only else normal_state)
 
     # ---------------------------------------------------------- 入力操作
     def add_files(self):
@@ -244,6 +289,24 @@ class App:
         if path:
             self.outdir_var.set(path)
 
+    # ---------------------------------------------------------- ファイル情報
+    def show_info(self):
+        """選択中 (未選択なら全件) のトラック構成をログに表示する。"""
+        sel = self.input_list.curselection()
+        paths = [self.input_list.get(i) for i in sel] or list(self.input_list.get(0, "end"))
+        if not paths:
+            messagebox.showwarning("入力がありません", "ファイルまたはフォルダを追加してください。")
+            return
+        threading.Thread(target=self._show_info_worker, args=(paths,), daemon=True).start()
+
+    def _show_info_worker(self, paths):
+        files = core.collect_inputs(paths, log=lambda m: self._post("log", m))
+        if not files:
+            self._post("log", "対象の動画ファイルが見つかりません。")
+            return
+        for f in files:
+            self._post("log", core.describe_file(f) + "\n")
+
     # ---------------------------------------------------------- 実行
     def _gather_options(self):
         """UI から設定を読み取って検証する。問題があれば None を返す。"""
@@ -281,17 +344,44 @@ class App:
                 messagebox.showwarning("入力エラー", "出力先フォルダを指定してください。")
                 return None
 
+        fmt = FORMAT_CHOICES[self.format_var.get()]
+        codec = CODEC_CHOICES[self.codec_var.get()]
+        audio = AUDIO_CHOICES[self.audio_var.get()]
+        audio_track = AUDIO_TRACK_CHOICES[self.audio_track_var.get()]
+        if fmt == "webm" and codec != "av1":
+            messagebox.showwarning("入力エラー", "WebM 出力はコーデック AV1 のみ対応しています。")
+            return None
+        if audio == "none" and audio_track != "auto":
+            messagebox.showwarning("入力エラー", "音声「なし」と音声トラック指定は同時に使えません。")
+            return None
+        if core.is_audio_format(fmt):
+            if audio == "none":
+                messagebox.showwarning("入力エラー", "音声のみ書き出しでは音声「なし」は選べません。")
+                return None
+            if audio_track == "all":
+                messagebox.showwarning(
+                    "入力エラー", "音声のみ書き出しでは「すべて保持」は選べません。\n"
+                    "書き出すトラックを1つ選んでください。")
+                return None
+            if mode == "replace":
+                messagebox.showwarning(
+                    "入力エラー", "音声のみ書き出しでは「元ファイルを置き換える」は使えません。\n"
+                    "(元の映像が失われるため)")
+                return None
+
         suffix = self.suffix_var.get().strip() or "_compressed"
 
         opts = SimpleNamespace(
             quality=self.quality_var.get(),
-            codec=CODEC_CHOICES[self.codec_var.get()],
+            codec=codec,
             hw=HW_CHOICES[self.hw_var.get()],
+            format=fmt,
             fps=fps,
             height=height,
             clip_start=clip_start,
             clip_end=clip_end,
-            audio=AUDIO_CHOICES[self.audio_var.get()],
+            audio=audio,
+            audio_track=audio_track,
             audio_bitrate="160k",
             preset="medium",
             dry_run=False,
@@ -337,23 +427,32 @@ class App:
     def _run_jobs(self, cfg):
         log = lambda m: self._post("log", m)
         try:
-            try:
-                hw = core.pick_hw(cfg.opts.codec, cfg.opts.hw, cfg.opts.quality)
-            except ValueError as e:
-                self._post("error", str(e))
-                return
+            audio_only = core.is_audio_format(cfg.opts.format)
+            hw = None
+            if not audio_only:
+                try:
+                    hw = core.pick_hw(cfg.opts.codec, cfg.opts.hw, cfg.opts.quality)
+                except ValueError as e:
+                    self._post("error", str(e))
+                    return
 
             files = core.collect_inputs(cfg.inputs, log=log)
             if not files:
                 self._post("error", "対象の動画ファイルが見つかりません。")
                 return
 
-            log(f"エンコーダー: {core.encoder_label(cfg.opts.codec, hw)} / 品質: {cfg.opts.quality}"
-                + (f" / fps: {cfg.opts.fps:g}" if cfg.opts.fps else "")
-                + (f" / 高さ: {cfg.opts.height}px" if cfg.opts.height else "")
-                + (f" / 切り出し: {core.fmt_time(cfg.opts.clip_start or 0)}-"
-                   + (core.fmt_time(cfg.opts.clip_end) if cfg.opts.clip_end is not None else "末尾")
-                   if cfg.opts.clip_start or cfg.opts.clip_end is not None else ""))
+            clip_label = (f" / 切り出し: {core.fmt_time(cfg.opts.clip_start or 0)}-"
+                          + (core.fmt_time(cfg.opts.clip_end) if cfg.opts.clip_end is not None else "末尾")
+                          if cfg.opts.clip_start or cfg.opts.clip_end is not None else "")
+            track_label = core.audio_track_label(cfg.opts.audio_track)
+            if audio_only:
+                log(f"音声のみ書き出し: {cfg.opts.format.upper()}" + track_label + clip_label)
+            else:
+                log(f"エンコーダー: {core.encoder_label(cfg.opts.codec, hw)} / 品質: {cfg.opts.quality}"
+                    + (f" / 形式: {cfg.opts.format}" if cfg.opts.format != "mp4" else "")
+                    + (f" / fps: {cfg.opts.fps:g}" if cfg.opts.fps else "")
+                    + (f" / 高さ: {cfg.opts.height}px" if cfg.opts.height else "")
+                    + track_label + clip_label)
             log(f"対象: {len(files)} ファイル\n")
 
             out_dir = None
@@ -361,6 +460,7 @@ class App:
                 out_dir = Path(cfg.outdir)
                 out_dir.mkdir(parents=True, exist_ok=True)
 
+            ext = core.output_ext(cfg.opts.format)
             total_src = total_dst = done = failed = skipped = 0
             for i, src in enumerate(files, 1):
                 if self.cancel_event.is_set():
@@ -368,13 +468,13 @@ class App:
                     break
 
                 if cfg.mode == "replace":
-                    dst = core.temp_output_path(src)
+                    dst = core.temp_output_path(src, ext)
                 elif out_dir:
-                    dst = out_dir / (src.stem + ".mp4")
+                    dst = out_dir / (src.stem + ext)
                 else:
-                    dst = src.with_name(src.stem + cfg.suffix + ".mp4")
+                    dst = src.with_name(src.stem + cfg.suffix + ext)
                 if dst.resolve() == src.resolve():
-                    dst = src.with_name(src.stem + "_compressed.mp4")
+                    dst = src.with_name(src.stem + "_compressed" + ext)
 
                 self._post("file", i, len(files), src.name)
                 log(f"[{i}/{len(files)}] {src.name}")
@@ -392,7 +492,7 @@ class App:
 
                 if result == "ok":
                     if cfg.mode == "replace":
-                        dst = core.replace_original(src, dst)
+                        dst = core.replace_original(src, dst, ext)
                     total_src += src_size
                     total_dst += dst.stat().st_size
                     done += 1
