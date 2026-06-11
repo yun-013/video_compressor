@@ -11,6 +11,11 @@ nvenc・qsv・amf / videotoolbox / vaapi を自動検出)。
     python compress.py video.mp4 --quality 22           # 品質を上げて圧縮
     python compress.py video.mp4 --fps 30 --height 720  # 30fps / 720p に変換
     python compress.py video.mp4 --start 1:30 --end 5:00  # 1分30秒〜5分を切り出して圧縮
+    python compress.py video.mp4 --format mkv           # MKV コンテナで出力
+    python compress.py video.mp4 --format mp3           # 音声のみ MP3 で書き出し
+    python compress.py obs_rec.mkv --audio-track all    # OBS の多重音声トラックを全て保持
+    python compress.py obs_rec.mkv --format mp3 --audio-track 2  # トラック2だけ MP3 抽出
+    python compress.py video.mp4 --info                 # トラック構成 (映像/音声/字幕) を表示
     python compress.py "D:\\videos" --hw none           # CPU (libx265) で最高圧縮率
     python compress.py video.mp4 -o "D:\\out"           # 出力先フォルダ指定
     python compress.py video.mp4 --replace-original     # 元ファイルを置き換える
@@ -35,6 +40,27 @@ else:  # Linux など
     HW_PRIORITY = ["nvenc", "qsv", "vaapi"]
 
 CODECS = ("hevc", "h264", "av1")
+
+# 出力形式と拡張子。音声形式を選ぶと映像を捨てて音声のみ書き出す
+VIDEO_FORMATS = {"mp4": ".mp4", "mkv": ".mkv", "mov": ".mov", "webm": ".webm"}
+AUDIO_FORMATS = {"mp3": ".mp3", "m4a": ".m4a", "wav": ".wav", "flac": ".flac"}
+OUTPUT_EXTS = {**VIDEO_FORMATS, **AUDIO_FORMATS}
+
+# 音声のみ出力時のエンコーダーと、--audio copy で無劣化コピーできる入力コーデック
+AUDIO_FORMAT_CODECS = {
+    "mp3": ("libmp3lame", {"mp3"}),
+    "m4a": ("aac", {"aac", "alac"}),
+    "wav": ("pcm_s16le", {"pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_f32le", "pcm_u8"}),
+    "flac": ("flac", {"flac"}),
+}
+
+
+def is_audio_format(fmt):
+    return fmt in AUDIO_FORMATS
+
+
+def output_ext(fmt):
+    return OUTPUT_EXTS[fmt]
 
 # Windows でコンソールを出さずにサブプロセスを起動するためのフラグ (GUI 用)
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
@@ -148,33 +174,105 @@ def parse_time(text):
     return sec
 
 
+def _parse_fps(stream):
+    num, _, den = stream.get("r_frame_rate", "0/1").partition("/")
+    try:
+        return float(num) / float(den or 1) if float(den or 1) else 0
+    except ValueError:
+        return 0
+
+
 def probe(path: Path):
-    """動画の長さ・解像度・fps・コーデックを取得する。"""
+    """動画の長さ・解像度・fps・コーデックなどの基本情報を取得する。"""
     res = run([
         FFPROBE, "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=codec_name,width,height,r_frame_rate",
+        "-show_entries", "stream=codec_type,codec_name,width,height,r_frame_rate",
+        "-show_entries", "stream_disposition=attached_pic",
         "-show_entries", "format=duration,size,bit_rate",
         "-of", "json", str(path),
     ])
     if res.returncode != 0:
         return None
     data = json.loads(res.stdout)
-    if not data.get("streams"):
+    streams = data.get("streams") or []
+    # カバー画像 (attached_pic) は映像トラックとして扱わない
+    video = next((s for s in streams if s.get("codec_type") == "video"
+                  and not (s.get("disposition") or {}).get("attached_pic")), None)
+    audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
+    if video is None and audio is None:
         return None
-    s = data["streams"][0]
+    audio_codecs = [s.get("codec_name") for s in streams if s.get("codec_type") == "audio"]
     f = data.get("format", {})
-    num, _, den = s.get("r_frame_rate", "0/1").partition("/")
-    fps = float(num) / float(den or 1) if float(den or 1) else 0
     return {
-        "codec": s.get("codec_name", "?"),
-        "width": s.get("width", 0),
-        "height": s.get("height", 0),
-        "fps": fps,
+        "codec": video.get("codec_name", "?") if video else None,
+        "width": video.get("width", 0) if video else 0,
+        "height": video.get("height", 0) if video else 0,
+        "fps": _parse_fps(video) if video else 0,
+        "has_video": video is not None,
+        "audio_codec": audio.get("codec_name") if audio else None,
+        "audio_codecs": audio_codecs,
+        "audio_count": len(audio_codecs),
         "duration": float(f.get("duration", 0) or 0),
         "size": int(f.get("size", 0) or 0),
         "bit_rate": int(f.get("bit_rate", 0) or 0),
     }
+
+
+def probe_streams(path: Path):
+    """ファイル内の全ストリーム (トラック) 情報を取得する。"""
+    res = run([FFPROBE, "-v", "error", "-show_streams", "-show_format",
+               "-of", "json", str(path)])
+    if res.returncode != 0:
+        return None
+    try:
+        return json.loads(res.stdout)
+    except ValueError:
+        return None
+
+
+def describe_file(path: Path):
+    """トラック構成 (映像/音声/字幕など) を人間向けのテキストにする。
+
+    ※ 編集ソフトのレイヤーは書き出し時に合成されるため、ファイルに残るのは
+      トラック (ストリーム) 単位の構造のみ。
+    """
+    data = probe_streams(path)
+    if not data:
+        return f"{path.name}: 情報を取得できません"
+    f = data.get("format", {})
+    duration = float(f.get("duration", 0) or 0)
+    size = int(f.get("size", 0) or 0)
+    container = (f.get("format_name") or "?").split(",")[0]
+    lines = [f"{path.name}  [{container} / {fmt_time(duration)} / {human_size(size)}]"]
+    type_names = {"video": "映像", "audio": "音声", "subtitle": "字幕",
+                  "data": "データ", "attachment": "添付"}
+    audio_n = 0
+    for s in data.get("streams", []):
+        ctype = type_names.get(s.get("codec_type"), s.get("codec_type", "?"))
+        desc = s.get("codec_name", "?")
+        if s.get("codec_type") == "video":
+            if (s.get("disposition") or {}).get("attached_pic"):
+                ctype = "カバー画像"
+            desc += f" {s.get('width', '?')}x{s.get('height', '?')}"
+            fps = _parse_fps(s)
+            if fps:
+                desc += f" {fps:g}fps"
+        elif s.get("codec_type") == "audio":
+            audio_n += 1
+            ctype = f"音声{audio_n}"  # 「音声トラック」指定で使う番号
+            if s.get("channels"):
+                desc += f" {s['channels']}ch"
+            if s.get("sample_rate"):
+                desc += f" {float(s['sample_rate']) / 1000:g}kHz"
+        bit_rate = int(s.get("bit_rate", 0) or 0)
+        if bit_rate:
+            desc += f" {bit_rate // 1000}kbps"
+        tags = s.get("tags") or {}
+        extra = " / ".join(filter(None, [tags.get("language"), tags.get("title")]))
+        if extra:
+            desc += f"  [{extra}]"
+        lines.append(f"  トラック #{s.get('index')}: {ctype} ({desc})")
+    return "\n".join(lines)
 
 
 def build_video_args(codec, hw, quality, preset):
@@ -208,16 +306,42 @@ def build_video_args(codec, hw, quality, preset):
     raise ValueError(f"unknown codec: {codec}")
 
 
+def selected_audio_codecs(info, track):
+    """音声トラック指定 (auto / all / N) で出力対象になる音声コーデックの一覧。"""
+    codecs = info.get("audio_codecs") or []
+    if track == "all":
+        return codecs
+    if isinstance(track, int):
+        return codecs[track - 1:track]
+    return codecs[:1]  # auto: ffmpeg の既定選択 (通常は先頭)
+
+
+def audio_map_args(track, audio_only=False):
+    """音声トラック指定に応じた -map オプション。auto は ffmpeg の既定選択に任せる。"""
+    if track == "all":
+        return (["-map", "0:a"] if audio_only
+                else ["-map", "0:v:0", "-map", "0:a?"])
+    if isinstance(track, int):
+        m = ["-map", f"0:a:{track - 1}"]
+        return m if audio_only else ["-map", "0:v:0", *m]
+    return []
+
+
+def build_audio_only_args(fmt, opts, info, track):
+    """音声のみ書き出し時の音声オプション。コピー可能な場合は無劣化コピー。"""
+    encoder, copy_ok = AUDIO_FORMAT_CODECS[fmt]
+    codecs = selected_audio_codecs(info, track)
+    if opts.audio == "copy" and codecs and all(c in copy_ok for c in codecs):
+        return ["-c:a", "copy"]
+    if encoder in ("pcm_s16le", "flac"):  # 非圧縮 / 可逆はビットレート指定なし
+        return ["-c:a", encoder]
+    return ["-c:a", encoder, "-b:a", opts.audio_bitrate]
+
+
 def build_command(src: Path, dst: Path, info, opts, hw):
     """1ファイル分の ffmpeg コマンドを組み立てる。"""
-    vf = []
-    if opts.height and info["height"] > opts.height:
-        vf.append(f"scale=-2:{opts.height}")
-    if opts.fps and info["fps"] > opts.fps + 0.01:
-        vf.append(f"fps={opts.fps}")
-
-    vf += hw_filter_args(hw)
-
+    fmt = getattr(opts, "format", "mp4")
+    track = getattr(opts, "audio_track", "auto")
     start = getattr(opts, "clip_start", None)
     end = getattr(opts, "clip_end", None)
 
@@ -227,20 +351,41 @@ def build_command(src: Path, dst: Path, info, opts, hw):
     cmd += ["-i", str(src)]
     if end is not None:
         cmd += ["-t", f"{end - (start or 0):g}"]
-    if vf:
-        cmd += ["-vf", ",".join(vf)]
-    cmd += build_video_args(opts.codec, hw, opts.quality, opts.preset)
-    if hw != "vaapi":  # vaapi は hwupload 後の GPU フレームを渡すため pix_fmt 指定不可
-        cmd += ["-pix_fmt", "yuv420p"]
-    if opts.codec == "hevc" and dst.suffix.lower() == ".mp4":
-        cmd += ["-tag:v", "hvc1"]  # macOS / iOS の標準プレイヤーで再生可能にする
-    if opts.audio == "none":
-        cmd += ["-an"]
-    elif opts.audio == "copy":
-        cmd += ["-c:a", "copy"]
+
+    if is_audio_format(fmt):
+        cmd += ["-vn", *audio_map_args(track, audio_only=True),
+                *build_audio_only_args(fmt, opts, info, track)]
     else:
-        cmd += ["-c:a", "aac", "-b:a", opts.audio_bitrate]
-    if dst.suffix.lower() == ".mp4":
+        if opts.audio != "none":
+            cmd += audio_map_args(track)
+        vf = []
+        if opts.height and info["height"] > opts.height:
+            vf.append(f"scale=-2:{opts.height}")
+        if opts.fps and info["fps"] > opts.fps + 0.01:
+            vf.append(f"fps={opts.fps}")
+        vf += hw_filter_args(hw)
+        if vf:
+            cmd += ["-vf", ",".join(vf)]
+        cmd += build_video_args(opts.codec, hw, opts.quality, opts.preset)
+        if hw != "vaapi":  # vaapi は hwupload 後の GPU フレームを渡すため pix_fmt 指定不可
+            cmd += ["-pix_fmt", "yuv420p"]
+        if opts.codec == "hevc" and dst.suffix.lower() in (".mp4", ".mov"):
+            cmd += ["-tag:v", "hvc1"]  # macOS / iOS の標準プレイヤーで再生可能にする
+        if opts.audio == "none":
+            cmd += ["-an"]
+        elif fmt == "webm":
+            # WebM は AAC 不可。コピーは Opus/Vorbis のみ、それ以外は Opus に再圧縮
+            codecs = selected_audio_codecs(info, track)
+            if opts.audio == "copy" and codecs and all(c in ("opus", "vorbis") for c in codecs):
+                cmd += ["-c:a", "copy"]
+            else:
+                cmd += ["-c:a", "libopus", "-b:a", opts.audio_bitrate]
+        elif opts.audio == "copy":
+            cmd += ["-c:a", "copy"]
+        else:
+            cmd += ["-c:a", "aac", "-b:a", opts.audio_bitrate]
+
+    if dst.suffix.lower() in (".mp4", ".mov", ".m4a"):
         cmd += ["-movflags", "+faststart"]
     cmd += ["-progress", "pipe:1", "-nostats", str(dst)]
     return cmd
@@ -270,6 +415,20 @@ def compress_file(src: Path, dst: Path, opts, hw,
     info = probe(src)
     if info is None:
         log(f"  スキップ: 動画情報を取得できません: {src.name}")
+        return "skipped"
+
+    audio_only = is_audio_format(getattr(opts, "format", "mp4"))
+    if audio_only and not info["audio_codec"]:
+        log("  スキップ: 音声トラックがありません")
+        return "skipped"
+    if not audio_only and not info["has_video"]:
+        log("  スキップ: 映像トラックがありません")
+        return "skipped"
+
+    track = getattr(opts, "audio_track", "auto")
+    if (isinstance(track, int) and info["audio_count"] < track
+            and (audio_only or opts.audio != "none")):
+        log(f"  スキップ: 音声トラック {track} がありません (このファイルの音声は {info['audio_count']} トラック)")
         return "skipped"
 
     # クリップ指定がある場合、進捗計算に使う長さを切り出し後の長さにする
@@ -335,22 +494,22 @@ def compress_file(src: Path, dst: Path, opts, hw,
     ratio = dst_size / src_size * 100 if src_size else 0
     elapsed = time.time() - start
     log(f"  完了: {human_size(src_size)} -> {human_size(dst_size)} ({ratio:.0f}%)  [{fmt_time(elapsed)}]")
-    if dst_size >= src_size:
+    if dst_size >= src_size and not audio_only:
         log("  ※ 元より大きくなりました。--quality の値を上げる(数値を大きく)か、元のままの使用を検討してください。")
     return "ok"
 
 
-def replace_original(src: Path, tmp: Path):
+def replace_original(src: Path, tmp: Path, ext=".mp4"):
     """圧縮成功後、一時ファイルで元ファイルを置き換える。最終パスを返す。"""
-    final = src.with_suffix(".mp4")
+    final = src.with_suffix(ext)
     src.unlink()
     tmp.rename(final)
     return final
 
 
-def temp_output_path(src: Path):
+def temp_output_path(src: Path, ext=".mp4"):
     """置き換えモード用の一時出力パス。"""
-    return src.with_name(src.stem + ".__compress_tmp__.mp4")
+    return src.with_name(src.stem + ".__compress_tmp__" + ext)
 
 
 def collect_inputs(paths, log=print):
@@ -374,6 +533,27 @@ def check_ffmpeg():
 
 # ---------------------------------------------------------------- CLI
 
+def parse_audio_track(text):
+    """--audio-track の値 (auto / all / 1以上の番号) を解析する。"""
+    if text in ("auto", "all"):
+        return text
+    try:
+        n = int(text)
+        if n >= 1:
+            return n
+    except ValueError:
+        pass
+    raise argparse.ArgumentTypeError(f"auto / all / 1以上のトラック番号 で指定してください: {text}")
+
+
+def audio_track_label(track):
+    if track == "all":
+        return " / 音声トラック: すべて保持"
+    if isinstance(track, int):
+        return f" / 音声トラック: {track}"
+    return ""
+
+
 def _console_progress(pct, speed, eta):
     bar = "#" * int(pct // 4) + "-" * (25 - int(pct // 4))
     sys.stdout.write(f"\r  [{bar}] {pct:5.1f}%  {speed:4.1f}x  残り {fmt_time(eta)}   ")
@@ -396,6 +576,10 @@ def main():
                     help="品質値 CRF/QP (既定: 24。小さいほど高画質)")
     ap.add_argument("--codec", choices=list(CODECS), default="hevc",
                     help="出力コーデック (既定: hevc = H.265)")
+    ap.add_argument("--format", choices=list(OUTPUT_EXTS), default="mp4",
+                    help="出力形式 (既定: mp4)。mp3 / m4a / wav / flac は音声のみ書き出し")
+    ap.add_argument("--info", action="store_true",
+                    help="変換せずトラック構成 (映像/音声/字幕) を表示する")
     ap.add_argument("--start", dest="clip_start", type=parse_time, metavar="TIME",
                     help="クリップ開始位置 (例: 90 / 1:30 / 0:01:30.5)。指定区間のみ切り出して圧縮")
     ap.add_argument("--end", dest="clip_end", type=parse_time, metavar="TIME",
@@ -409,6 +593,9 @@ def main():
                     help="CPUエンコード時のプリセット (既定: medium。slow でさらに圧縮)")
     ap.add_argument("--audio", choices=["copy", "aac", "none"], default="copy",
                     help="音声処理 (既定: copy=無劣化コピー, none=音声を削除)")
+    ap.add_argument("--audio-track", type=parse_audio_track, default="auto", metavar="auto|all|N",
+                    help="使用する音声トラック (既定: auto)。all=全トラック保持 (OBS 多重録音向け), "
+                         "N=N番目の音声のみ (--info で番号確認)")
     ap.add_argument("--audio-bitrate", default="160k", help="--audio aac 時のビットレート (既定: 160k)")
     ap.add_argument("--overwrite", action="store_true", help="出力先に既存ファイルがあっても上書きする")
     ap.add_argument("--yes", action="store_true", help="--replace-original 時の確認をスキップ")
@@ -418,20 +605,49 @@ def main():
     if not check_ffmpeg():
         sys.exit("エラー: ffmpeg / ffprobe が見つかりません。インストールして PATH を通してください。")
 
+    if args.info:
+        files = collect_inputs(args.inputs)
+        if not files:
+            sys.exit("対象の動画ファイルが見つかりません。")
+        for f in files:
+            print(describe_file(f))
+            print()
+        return
+
     if args.clip_start is not None and args.clip_end is not None and args.clip_end <= args.clip_start:
         sys.exit("エラー: --end は --start より後の時間を指定してください。")
 
-    try:
-        hw = pick_hw(args.codec, args.hw, args.quality)
-    except ValueError as e:
-        sys.exit(f"エラー: {e}")
+    audio_only = is_audio_format(args.format)
+    if args.format == "webm" and args.codec != "av1":
+        sys.exit("エラー: WebM 出力は --codec av1 のみ対応しています。")
+    if audio_only and args.audio == "none":
+        sys.exit("エラー: 音声のみ書き出しでは --audio none は指定できません。")
+    if audio_only and args.replace_original:
+        sys.exit("エラー: 音声のみ書き出しでは --replace-original は使用できません。")
+    if audio_only and args.audio_track == "all":
+        sys.exit("エラー: 音声のみ書き出しでは --audio-track all は使用できません。トラック番号を指定してください。")
+    if args.audio == "none" and args.audio_track != "auto":
+        sys.exit("エラー: --audio none と --audio-track は同時に指定できません。")
 
-    print(f"エンコーダー: {encoder_label(args.codec, hw)} / 品質: {args.quality}"
-          + (f" / fps: {args.fps}" if args.fps else "")
-          + (f" / 高さ: {args.height}px" if args.height else "")
-          + (f" / クリップ: {fmt_time(args.clip_start or 0)}-"
-             + (fmt_time(args.clip_end) if args.clip_end is not None else "末尾")
-             if args.clip_start or args.clip_end is not None else ""))
+    hw = None
+    if not audio_only:
+        try:
+            hw = pick_hw(args.codec, args.hw, args.quality)
+        except ValueError as e:
+            sys.exit(f"エラー: {e}")
+
+    clip_label = (f" / クリップ: {fmt_time(args.clip_start or 0)}-"
+                  + (fmt_time(args.clip_end) if args.clip_end is not None else "末尾")
+                  if args.clip_start or args.clip_end is not None else "")
+    if audio_only:
+        print(f"音声のみ書き出し: {args.format.upper()}"
+              + audio_track_label(args.audio_track) + clip_label)
+    else:
+        print(f"エンコーダー: {encoder_label(args.codec, hw)} / 品質: {args.quality}"
+              + (f" / 形式: {args.format}" if args.format != "mp4" else "")
+              + (f" / fps: {args.fps}" if args.fps else "")
+              + (f" / 高さ: {args.height}px" if args.height else "")
+              + audio_track_label(args.audio_track) + clip_label)
 
     files = collect_inputs(args.inputs)
     if not files:
@@ -448,16 +664,17 @@ def main():
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
 
+    ext = output_ext(args.format)
     total_src = total_dst = done = failed = skipped = 0
     for i, src in enumerate(files, 1):
         if args.replace_original:
-            dst = temp_output_path(src)
+            dst = temp_output_path(src, ext)
         elif out_dir:
-            dst = out_dir / (src.stem + ".mp4")
+            dst = out_dir / (src.stem + ext)
         else:
-            dst = src.with_name(src.stem + args.suffix + ".mp4")
+            dst = src.with_name(src.stem + args.suffix + ext)
         if dst.resolve() == src.resolve():
-            dst = src.with_name(src.stem + "_compressed.mp4")
+            dst = src.with_name(src.stem + "_compressed" + ext)
 
         print(f"[{i}/{len(files)}] {src.name}")
         if not args.replace_original and dst.exists() and not args.overwrite:
@@ -474,7 +691,7 @@ def main():
                                log=lambda m, _p=progress_done: (_p(), print(m)))
         if result == "ok":
             if args.replace_original:
-                dst = replace_original(src, dst)
+                dst = replace_original(src, dst, ext)
             total_src += src_size
             total_dst += dst.stat().st_size
             done += 1
